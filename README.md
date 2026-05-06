@@ -60,7 +60,7 @@ simultaneously, taking advantage of modern CPU cache and SIMD instructions.
 
 ## 4. Pipeline Architecture
  
-The pipeline follows a three-stage structure: **Extract → Load → Transform**, with Parquet export as the final output. A single entry point (`main()` in `pipeline.py`) orchestrates all phases and logs the duration of each.
+The pipeline follows a three-stage structure: **Extract → Load → Transform**, with Parquet export as the final output. A single entry point (`main()` in `run.py`) orchestrates all phases and logs the duration of each.
  
 ```
 nba_api (Python)
