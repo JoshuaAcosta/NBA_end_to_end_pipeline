@@ -1,3 +1,4 @@
+import duckdb
 import glob
 import json
 import logging
@@ -6,34 +7,37 @@ import pandas as pd
 from pathlib import Path
 import time
 from dotenv import load_dotenv
+
 load_dotenv()
-import duckdb
 from nba_api.stats.endpoints import LeagueDashTeamStats
 from nba_api.stats.endpoints import LeagueGameFinder
 from nba_api.stats.static import teams
 
 # Logger
 logger = logging.getLogger(__name__)
-logging.basicConfig(filename='pipeline.log', encoding='utf-8', level=logging.INFO, 
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    filename="pipeline.log",
+    encoding="utf-8",
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
-class NBADataPipeline():
 
-    '''
-    Extracting NBA data, loading it to DuckDB, and transforming it into 
+class NBADataPipeline:
+    """
+    Extracting NBA data, loading it to DuckDB, and transforming it into
     a star schema for home court advantage analysis
-    '''
+    """
 
-    def __init__(self, data_dir: str, start_season: int, end_season: int):
+    def __init__(self, data_dir, start_season, end_season):
         self.data_dir = data_dir
         self.start_season = start_season
         self.end_season = end_season
-        self.logger = logger
 
         self.raw_dir = Path(self.data_dir)
         self.team_static_path = Path(self.data_dir + "/team_static")
@@ -50,127 +54,144 @@ class NBADataPipeline():
 
         self.conn = duckdb.connect(self.db_file)
 
-        self.logger.info("NBADataPipeline initialized")
+        logger.info("NBADataPipeline initialized")
 
     def _season_formatter(self, year):
-        return f"{year}-{str(year+1)[2:]}"
+        return f"{year}-{str(year + 1)[2:]}"
 
     def extract_team_data(self):
-        
-        try:
-            self.logger.info("Extracting static team data")
-            team_data = teams.get_teams()
-            self.logger.info(f"Extracted {len(team_data)} rows")
 
-            file_path = os.path.join(self.team_static_path, 'teams_static.json')
-            self.logger.info(f"Writing data to JSON file at {file_path} ")
-            with open(file_path, 'w') as f:
+        try:
+            logger.info("Extracting static team data")
+            team_data = teams.get_teams()
+            logger.info(f"Extracted {len(team_data)} rows")
+
+            file_path = os.path.join(self.team_static_path, "teams_static.json")
+            logger.info(f"Writing data to JSON file at {file_path} ")
+            with open(file_path, "w") as f:
                 json.dump(team_data, f, indent=4)
-            self.logger.info(f"Successfully wrote data to JSON file at {file_path}")
-        
+            logger.info(f"Successfully wrote data to JSON file at {file_path}")
+
         except Exception as e:
-            self.logger.error(f"Failed to extract static team data: {e}")
+            logger.error(f"Failed to extract static team data: {e}")
             raise
-    
+
     def extract_game_logs(self):
         try:
-            for season in range(self.start_season, self.end_season+1):
+            for season in range(self.start_season, self.end_season + 1):
                 try:
                     full_season = self._season_formatter(season)
 
-                    self.logger.info(f"Extracting game log data for {full_season} season")
-                    game_log = LeagueGameFinder(season_nullable=full_season,
-                                                season_type_nullable='Regular Season').get_normalized_dict()["LeagueGameFinderResults"]
-                    self.logger.info(f"Extracted {len(game_log)} rows")
+                    logger.info(f"Extracting game log data for {full_season} season")
+                    game_log = LeagueGameFinder(
+                        season_nullable=full_season,
+                        season_type_nullable="Regular Season",
+                    ).get_normalized_dict()["LeagueGameFinderResults"]
+                    logger.info(f"Extracted {len(game_log)} rows")
 
-                    file_path = os.path.join(self.game_logs_path, f'{full_season}_game_logs.json')
-                    self.logger.info(f"Writing data to JSON file at {file_path} ")
+                    file_path = os.path.join(
+                        self.game_logs_path, f"{full_season}_game_logs.json"
+                    )
+                    logger.info(f"Writing data to JSON file at {file_path} ")
 
-                    with open(file_path, 'w') as f:
+                    with open(file_path, "w") as f:
                         json.dump(game_log, f, indent=4)
-                    
-                    self.logger.info(f"Successfully wrote data to JSON file at {file_path}")
-                    
+
+                    logger.info(f"Successfully wrote data to JSON file at {file_path}")
+
                     time.sleep(1)
-                
+
                 except Exception as e:
-                    self.logger.error(f"Failed to extract game log data: {e}")
+                    logger.error(f"Failed to extract game log data: {e}")
 
         except Exception as e:
-            self.logger.error(f"Failed to extract game log data: {e}")
+            logger.error(f"Failed to extract game log data: {e}")
             raise
 
     def extract_team_season_stats(self, game_location, metrics_level):
         try:
-            for season in range(self.start_season, self.end_season+1):
+            for season in range(self.start_season, self.end_season + 1):
                 try:
                     full_season = self._season_formatter(season)
 
-                    self.logger.info(f"Extracting team season stats for {full_season} season")
-                    headers = {
-                        "Host": "stats.nba.com",
-                        "Connection": "keep-alive",
-                        "Accept": "application/json, text/plain, /",
-                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-                        "Referer": "https://www.nba.com/",
-                        "Origin": "https://www.nba.com",
-                        "x-nba-stats-origin": "stats",
-                        "x-nba-stats-token": "true",
-                        "Accept-Language": "en-US,en;q=0.9"
-                        }
-                    team_stats = LeagueDashTeamStats(season=full_season,
-                                                     location_nullable=game_location,
-                                                     measure_type_detailed_defense=metrics_level,
-                                                     timeout=100).get_normalized_dict()["LeagueDashTeamStats"]
-                    self.logger.info(f"Extracted {len(team_stats)} rows")
+                    logger.info(
+                        f"Extracting team season stats for {full_season} season"
+                    )
 
-                    file_path = os.path.join(self.team_stats_path, f'{full_season}_{game_location}_{metrics_level}_team_stats.json')
-                    self.logger.info(f"Writing data to JSON file at {file_path} ")
+                    team_stats = LeagueDashTeamStats(
+                        season=full_season,
+                        location_nullable=game_location,
+                        measure_type_detailed_defense=metrics_level,
+                        timeout=100,
+                    ).get_normalized_dict()["LeagueDashTeamStats"]
+                    logger.info(f"Extracted {len(team_stats)} rows")
 
-                    with open(file_path, 'w') as f:
+                    file_path = os.path.join(
+                        self.team_stats_path,
+                        f"{full_season}_{game_location}_{metrics_level}_team_stats.json",
+                    )
+                    logger.info(f"Writing data to JSON file at {file_path} ")
+
+                    with open(file_path, "w") as f:
                         json.dump(team_stats, f, indent=4)
-                    
-                    self.logger.info(f"Successfully wrote data to JSON file at {file_path}")
-                    
+
+                    logger.info(f"Successfully wrote data to JSON file at {file_path}")
+
                     time.sleep(3)
-                
+
                 except Exception as e:
-                    self.logger.error(f"Failed to extract team season stats data: {e}")
+                    logger.error(f"Failed to extract team season stats data: {e}")
 
         except Exception as e:
-            self.logger.error(f"Failed to extract team season stats data: {e}")
+            logger.error(f"Failed to extract team season stats data: {e}")
             raise
 
     def load_team_data(self):
         try:
-            team_data_path = f'{self.team_static_path}/*.json'
-            self.logger.info(f"Loading JSON files in duckdb staging table from {team_data_path}")
-            self.conn.execute(f'CREATE TABLE staging_teams_data AS SELECT * FROM read_json_auto(\'{team_data_path}\')')
+            team_data_path = f"{self.team_static_path}/*.json"
+            logger.info(
+                f"Loading JSON files in duckdb staging table from {team_data_path}"
+            )
+            self.conn.execute(
+                f"CREATE TABLE staging_teams_data AS SELECT * FROM read_json_auto('{team_data_path}')"
+            )
 
-            rows_loaded = self.conn.execute("SELECT COUNT(*) FROM staging_teams_data").fetchone()[0]
-            self.logger.info(f"Successfully loaded {rows_loaded} into game log staging table from {team_data_path}")
+            rows_loaded = self.conn.execute(
+                "SELECT COUNT(*) FROM staging_teams_data"
+            ).fetchone()[0]
+            logger.info(
+                f"Successfully loaded {rows_loaded} into game log staging table from {team_data_path}"
+            )
 
         except Exception as e:
-            self.logger.error(f"Failed to load team season stats data: {e}")
+            logger.error(f"Failed to load team season stats data: {e}")
             raise
 
     def load_game_logs_data(self):
         try:
-            game_data_path = f'{self.game_logs_path}/*.json'
-            self.logger.info(f"Loading JSON files in duckdb staging table from {game_data_path}")
-            self.conn.execute(f'CREATE TABLE staging_game_log_data AS SELECT * FROM read_json_auto(\'{game_data_path}\')')
+            game_data_path = f"{self.game_logs_path}/*.json"
+            logger.info(
+                f"Loading JSON files in duckdb staging table from {game_data_path}"
+            )
+            self.conn.execute(
+                f"CREATE TABLE staging_game_log_data AS SELECT * FROM read_json_auto('{game_data_path}')"
+            )
 
-            rows_loaded = self.conn.execute("SELECT COUNT(*) FROM staging_game_log_data").fetchone()[0]
-            self.logger.info(f"Successfully loaded {rows_loaded} into game log staging table from {game_data_path}")
+            rows_loaded = self.conn.execute(
+                "SELECT COUNT(*) FROM staging_game_log_data"
+            ).fetchone()[0]
+            logger.info(
+                f"Successfully loaded {rows_loaded} into game log staging table from {game_data_path}"
+            )
         except Exception as e:
-            self.logger.error(f"Failed to load game logs data: {e}")
+            logger.error(f"Failed to load game logs data: {e}")
             raise
 
     def load_team_season_data(self):
-        try: 
+        try:
             base_dfs = []
             advanced_dfs = []
-            team_stats_path = glob.glob(f'{self.team_stats_path}/*.json')
+            team_stats_path = glob.glob(f"{self.team_stats_path}/*.json")
 
             for file_path in team_stats_path:
                 df = pd.read_json(file_path)
@@ -190,25 +211,49 @@ class NBADataPipeline():
             combined_base = pd.concat(base_dfs)
             combined_advanced = pd.concat(advanced_dfs)
 
-            self.conn.execute('CREATE TABLE staging_team_stats_base AS SELECT * FROM combined_base')
-            base_rows_loaded = self.conn.execute("SELECT COUNT(*) FROM staging_team_stats_base").fetchone()[0]
-            self.logger.info(f"Successfully loaded {base_rows_loaded} into team season staging table from {file_base_name}")
-    
-            self.conn.execute('CREATE TABLE staging_team_stats_advanced AS SELECT * FROM combined_advanced')
-            adv_rows_loaded = self.conn.execute("SELECT COUNT(*) FROM staging_team_stats_advanced").fetchone()[0]
-            self.logger.info(f"Successfully loaded {adv_rows_loaded} into team season staging table from {file_base_name}")
+            self.conn.execute(
+                "CREATE TABLE staging_team_stats_base AS SELECT * FROM combined_base"
+            )
+            base_rows_loaded = self.conn.execute(
+                "SELECT COUNT(*) FROM staging_team_stats_base"
+            ).fetchone()[0]
+            logger.info(
+                f"Successfully loaded {base_rows_loaded} into team season staging table from {file_base_name}"
+            )
+
+            self.conn.execute(
+                "CREATE TABLE staging_team_stats_advanced AS SELECT * FROM combined_advanced"
+            )
+            adv_rows_loaded = self.conn.execute(
+                "SELECT COUNT(*) FROM staging_team_stats_advanced"
+            ).fetchone()[0]
+            logger.info(
+                f"Successfully loaded {adv_rows_loaded} into team season staging table from {file_base_name}"
+            )
 
         except Exception as e:
-            self.logger.error(f"Failed to load team season data: {e}")
+            logger.error(f"Failed to load team season data: {e}")
             raise
 
     def transform_team_data(self):
         try:
-            self.logger.info(f"Transforming and loading team data to dim_team table")
+            logger.info("Creating dim_team table in db")
             self.conn.execute("""
-                            CREATE TABLE dim_team AS 
+                            CREATE TABLE dim_team (
+                                team_id INTEGER PRIMARY KEY, 
+                                full_name VARCHAR, 
+                                abbreviation VARCHAR, 
+                                nickname VARCHAR, 
+                                city VARCHAR, 
+                                state VARCHAR, 
+                                year_founded INTEGER,
+                                conference VARCHAR
+                              )
+                            """)
+            logger.info("Inserting data into dim_team table in db")
+            self.conn.execute(""" INSERT INTO dim_team 
                             SELECT 
-                                id, 
+                                id as team_id, 
                                 full_name, 
                                 abbreviation, 
                                 nickname, 
@@ -217,20 +262,25 @@ class NBADataPipeline():
                                 year_founded,
                                 CASE
                                     WHEN abbreviation in ('BOS','BKN','NYK','PHI','TOR','CHI','CLE','DET','IND',
-                                    'MIL','ATL','CHA','MIA','ORL','WAS') THEN 'East' ELSE 'West' END AS conference 
+                                    'MIL','ATL','CHA','MIA','ORL','WAS') THEN 'East' ELSE 'West' END AS conference
+                               
                             FROM staging_teams_data
                             """)
-            dim_team_row_count = self.conn.execute("SELECT COUNT(*) FROM dim_team").fetchone()[0]
-            self.logger.info(f"Loaded {dim_team_row_count} rows of team data to dim_team table")
+            dim_team_row_count = self.conn.execute(
+                "SELECT COUNT(*) FROM dim_team"
+            ).fetchone()[0]
+            logger.info(
+                f"Loaded {dim_team_row_count} rows of team data to dim_team table"
+            )
         except Exception as e:
-            self.logger.error(f"Failed to load dim_team data: {e}")
+            logger.error(f"Failed to load dim_team data: {e}")
             raise
 
     def transform_dim_season(self):
         try:
-            self.logger.info("Creating dim_season table in db")
+            logger.info("Creating dim_season table in db")
             self.conn.execute(
-            """CREATE TABLE dim_season (
+                """CREATE TABLE dim_season (
                 season_id VARCHAR PRIMARY KEY, 
                 season_start_year INTEGER NOT NULL,
                 era VARCHAR NOT NULL,
@@ -240,7 +290,7 @@ class NBADataPipeline():
                 )
             """
             )
-            self.logger.info("Inserting data into dim_season table in db")
+            logger.info("Inserting data into dim_season table in db")
             self.conn.execute(""" INSERT INTO dim_season
                             SELECT 
                                 DISTINCT CONCAT(SEASON_ID[2:], '-', LPAD(CAST((CAST(SEASON_ID[2:] AS INTEGER) + 1) % 100 AS VARCHAR), 2, '0')) as season_id,
@@ -267,19 +317,23 @@ class NBADataPipeline():
                             
                                 FROM staging_game_log_data
                             """)
-            
-            dim_season_row_count = self.conn.execute("SELECT COUNT(*) FROM dim_season").fetchone()[0]
-            self.logger.info(f"Loaded {dim_season_row_count} rows of team data to dim_team table")
+
+            dim_season_row_count = self.conn.execute(
+                "SELECT COUNT(*) FROM dim_season"
+            ).fetchone()[0]
+            logger.info(
+                f"Loaded {dim_season_row_count} rows of team data to dim_team table"
+            )
 
         except Exception as e:
-            self.logger.error(f"Failed to transform dim_season data: {e}")
+            logger.error(f"Failed to transform dim_season data: {e}")
             raise
 
     def transform_dim_game(self):
         try:
-            self.logger.info("Creating dim_game table in db")
+            logger.info("Creating dim_game table in db")
             self.conn.execute(
-            """CREATE TABLE dim_game (
+                """CREATE TABLE dim_game (
                 game_id VARCHAR PRIMARY KEY,
                 game_date DATE NOT NULL,
                 month INTEGER, 
@@ -289,7 +343,7 @@ class NBADataPipeline():
                 )
             """
             )
-            self.logger.info("Inserting data into dim_game table in db")
+            logger.info("Inserting data into dim_game table in db")
             self.conn.execute(""" INSERT INTO dim_game
                             SELECT 
                                 DISTINCT game_id,
@@ -301,34 +355,221 @@ class NBADataPipeline():
                                     WHEN game_date BETWEEN '2020-07-30' AND '2020-10-11' THEN TRUE ELSE FALSE END AS is_bubble
                             FROM staging_game_log_data 
                             """)
-            
-            dim_game_row_count = self.conn.execute("SELECT COUNT(*) FROM dim_game").fetchone()[0]
-            self.logger.info(f"Loaded {dim_game_row_count} rows of team data to dim_game table")
-            
+
+            dim_game_row_count = self.conn.execute(
+                "SELECT COUNT(*) FROM dim_game"
+            ).fetchone()[0]
+            logger.info(
+                f"Loaded {dim_game_row_count} rows of team data to dim_game table"
+            )
+
         except Exception as e:
-            self.logger.error(f"Failed to transform dim_game data: {e}")
+            logger.error(f"Failed to transform dim_game data: {e}")
             raise
+
+    def transform_fact_team_game(self):
+        try:
+            logger.info("Creating fact_team_game table in db")
+            self.conn.execute(
+                """CREATE TABLE fact_team_game (
+                game_id VARCHAR REFERENCES dim_game(game_id),
+                team_id INTEGER REFERENCES dim_team(team_id),
+                opponent_team_id INTEGER REFERENCES dim_team(team_id),
+                season_id VARCHAR REFERENCES dim_season(season_id),
+                is_home BOOLEAN,
+                wl VARCHAR,
+                pts INTEGER,
+                opp_pts INTEGER,
+                fgm INTEGER,
+                fga INTEGER,
+                fg_pct FLOAT,
+                fg3m INTEGER,
+                fg3a INTEGER,
+                fg3_pct FLOAT,
+                ftm INTEGER,
+                fta INTEGER,
+                ft_pct FLOAT,
+                oreb INTEGER,
+                dreb INTEGER,
+                reb INTEGER,
+                ast INTEGER,
+                stl INTEGER,
+                blk INTEGER,
+                tov INTEGER,
+                pf INTEGER,
+                plus_minus INTEGER,
+                rest_days INTEGER,
+                is_back_to_back BOOLEAN,
+                PRIMARY KEY (game_id, team_id)
+                )
+            """
+            )
+            logger.info("Inserting data into fact_team_game table in db")
+            self.conn.execute(""" INSERT INTO fact_team_game
+                              WITH CTE AS (
+                                SELECT 
+                                    t.game_id,
+                                    t.team_id,
+                                    opp.team_id AS opponent_team_id,
+                                    CONCAT(t.SEASON_ID[2:], '-', LPAD(CAST((CAST(t.SEASON_ID[2:] AS INTEGER) + 1) % 100 AS VARCHAR), 2, '0')) as season_id,
+                                    CASE WHEN t.matchup LIKE '%vs.%' THEN TRUE ELSE FALSE END AS is_home,
+                                    t.wl,
+                                    t.pts,
+                                    opp.pts AS opp_pts,
+                                    t.fgm,
+                                    t.fga,
+                                    t.fg_pct,
+                                    t.fg3m,
+                                    t.fg3a,
+                                    t.fg3_pct,
+                                    t.ftm,
+                                    t.fta,
+                                    t.ft_pct,
+                                    t.oreb,
+                                    t.dreb,
+                                    t.reb,
+                                    t.ast,
+                                    t.stl,
+                                    t.blk,
+                                    t.tov,
+                                    t.pf,
+                                    t.plus_minus,       
+                                    CAST(t.game_date AS DATE) AS game_date,
+                                    LAG(CAST(t.game_date AS DATE), 1) OVER (PARTITION BY t.team_id ORDER BY t.game_date) as prev_game_date
+                                FROM staging_game_log_data t
+                                LEFT JOIN staging_game_log_data opp on t.game_id=opp.game_id AND t.team_id != opp.team_id  )
+                            SELECT
+                              game_id,
+                              team_id,
+                              opponent_team_id,
+                              season_id,
+                              is_home,
+                              wl,
+                              pts,
+                              opp_pts,
+                              fgm,
+                              fga,
+                              fg_pct,
+                              fg3m,
+                              fg3a,
+                              fg3_pct,
+                              ftm,
+                              fta,
+                              ft_pct,
+                              oreb,
+                              dreb,
+                              reb,
+                              ast,
+                              stl,
+                              blk,
+                              tov,
+                              pf,
+                              plus_minus,
+                              game_date - prev_game_date AS rest_days,
+                              CASE WHEN (game_date - prev_game_date) = 1 THEN TRUE ELSE FALSE END AS is_back_to_back
+                            FROM CTE
+                            """)
+
+            fact_team_game_row_count = self.conn.execute(
+                "SELECT COUNT(*) FROM fact_team_game"
+            ).fetchone()[0]
+            logger.info(
+                f"Loaded {fact_team_game_row_count} rows of team data to fact_team_game"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to transform fact_team_game: {e}")
+            raise
+
+    def transform_fact_team_season(self):
+        try:
+            logger.info("Creating fact_team_season table in db")
+            self.conn.execute(
+                """CREATE TABLE fact_team_season (
+                team_id INTEGER REFERENCES dim_team(team_id),
+                location VARCHAR,
+                season_id VARCHAR REFERENCES dim_season(season_id),  
+                gp INTEGER, 
+                w INTEGER,  
+                l INTEGER, 
+                w_pct FLOAT,
+                off_rating FLOAT, 
+                def_rating FLOAT, 
+                net_rating FLOAT, 
+                pace FLOAT, 
+                pie FLOAT,
+                PRIMARY KEY (team_id, season_id, location)
+                )
+            """
+            )
+            logger.info("Inserting data into fact_team_season table in db")
+            self.conn.execute(""" INSERT INTO fact_team_season
+                            SELECT
+                              b.team_id,
+                              b.location,
+                              b.season,
+                              b.gp, 
+                              b.w, 
+                              b.l, 
+                              b.w_pct,
+                              a.off_rating, 
+                              a.def_rating, 
+                              a.net_rating, 
+                              a.pace, 
+                              a.pie 
+                            FROM staging_team_stats_base b
+                            INNER JOIN staging_team_stats_advanced a
+                            on a.team_id=b.team_id AND a.location=b.location AND a.season=b.season
+                            """)
+
+            fact_team_season_row_count = self.conn.execute(
+                "SELECT COUNT(*) FROM fact_team_season"
+            ).fetchone()[0]
+            logger.info(
+                f"Loaded {fact_team_season_row_count} rows of team data to fact_team_season"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to transform fact_team_season: {e}")
+            raise
+
 
 def main():
     logger.info("Starting data pipeline script")
-    DATA_DIR = os.getenv('DATA_DIR')
+    DATA_DIR = os.getenv("DATA_DIR")
     pl = NBADataPipeline(DATA_DIR, 1996, 2024)
-    #pl.extract_team_data()
-    #pl.extract_game_logs()
-    #pl.extract_team_season_stats('Home', 'Base')
-    #pl.extract_team_season_stats('Home', 'Advanced')
-    #pl.extract_team_season_stats('Road', 'Base')
-    #pl.extract_team_season_stats("Road", "Advanced")
-    #pl.load_team_data()
-    #pl.load_game_logs_data()
-    #pl.load_team_season_data()
-    #pl.transform_team_data()
-    #pl.transform_dim_season()
-    #pl.transform_dim_game()
-    
-    #pl.conn.execute("DROP TABLE dim_season")
-    #print(pl.conn.execute("SELECT * FROM dim_game LIMIT 5").fetchdf())
 
+    # Extract
+    extract_start_time = time.time()
+    pl.extract_team_data()
+    pl.extract_game_logs()
+    pl.extract_team_season_stats("Home", "Base")
+    pl.extract_team_season_stats("Home", "Advanced")
+    pl.extract_team_season_stats("Road", "Base")
+    pl.extract_team_season_stats("Road", "Advanced")
+    extract_end_time = time.time()
+    extract_lapse_time = extract_end_time - extract_start_time
+    logger.info(f"Extraction lapse time: {extract_lapse_time}")
+
+    # Load
+    load_start_time = time.time()
+    pl.load_team_data()
+    pl.load_game_logs_data()
+    pl.load_team_season_data()
+    load_end_time = time.time()
+    load_lapse_time = load_end_time - load_start_time
+    logger.info(f"Load lapse time: {load_lapse_time}")
+
+    # Transform
+    transform_start_time = time.time()
+    pl.transform_team_data()
+    pl.transform_dim_season()
+    pl.transform_dim_game()
+    pl.transform_fact_team_game()
+    pl.transform_fact_team_season()
+    transform_end_time = time.time()
+    transform_lapse_time = transform_end_time - transform_start_time
+    logger.info(f"transform lapse time: {transform_lapse_time}")
 
 if __name__ == "__main__":
     main()

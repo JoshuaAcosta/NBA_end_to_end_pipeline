@@ -1,0 +1,16 @@
+[project]
+name = "nba-data-platform"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.42.88",
+    "duckdb>=1.5.1",
+    "nba-api>=1.11.4",
+    "numpy>=2.4.4",
+    "pandas>=3.0.2",
+    "pyarrow>=24.0.0",
+    "python-dotenv>=1.2.2",
+    "ruff>=0.15.12",
+]
