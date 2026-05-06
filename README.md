@@ -121,8 +121,8 @@ Here are all the relocations and major name changes since 1996:
 1. Vancouver Grizzlies → Memphis Grizzlies (2001) — relocated from Canada to Tennessee.
 2. Charlotte Hornets → New Orleans Hornets (2002) — the franchise moved to New Orleans, and Charlotte later got an expansion team (Bobcats in 2004) that reclaimed the Hornets name in 2014.
 3. New Orleans Hornets → New Orleans/Oklahoma City Hornets (2005-07) — temporarily displaced to OKC after Hurricane Katrina, then returned to New Orleans full-time in 2007.
-4. Seattle SuperSonics → Oklahoma City Thunder (2008) GitHub — full relocation, new city, new name, new arena.
-5. New Jersey Nets → Brooklyn Nets (2012) GitHub — moved from East Rutherford, NJ to Brooklyn, NY.
+4. Seattle SuperSonics → Oklahoma City Thunder (2008) — full relocation, new city, new name, new arena.
+5. New Jersey Nets → Brooklyn Nets (2012) — moved from East Rutherford, NJ to Brooklyn, NY.
 
 
 
