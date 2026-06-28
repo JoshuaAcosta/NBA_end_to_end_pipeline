@@ -40,7 +40,9 @@ class NBADataPipeline:
         self.start_season = start_season
         self.end_season = end_season
         self._set_paths()
-
+        self.db_path = Path(self.data_dir + "/db")
+        self.db_path.mkdir(parents=True, exist_ok=True)
+        self.db_file = Path(self.db_path, "nba_analytics.duckdb")
         self.conn = duckdb.connect(self.db_file)
 
         logger.info("NBADataPipeline initialized")
@@ -51,8 +53,6 @@ class NBADataPipeline:
         self.team_static_path = Path(self.data_dir + "/team_static")
         self.game_logs_path = Path(self.data_dir + "/game_logs")
         self.team_stats_path = Path(self.data_dir + "/team_stats")
-        self.db_path = Path(self.data_dir + "/db")
-        self.db_file = Path(self.db_path, "nba_analytics.duckdb")
 
     def _create_directories(self):
         "Creates directories as landing zone for extracted data"
@@ -60,13 +60,15 @@ class NBADataPipeline:
         self.team_static_path.mkdir(parents=True, exist_ok=True)
         self.game_logs_path.mkdir(parents=True, exist_ok=True)
         self.team_stats_path.mkdir(parents=True, exist_ok=True)
-        self.db_path.mkdir(parents=True, exist_ok=True)
 
     def _season_formatter(self, year):
+        """Helper function to format the year of a season prior to extracting game logs
+           and season stats from NBA API.
+        Example: An NBA season that begins in 2025 ends in 2026. The formatter returns '2025-26' """
         return f"{year}-{str(year + 1)[2:]}"
 
     def extract_team_data(self):
-
+        "Extracts team names, abbreviations, city and year founded from NBA API"
         try:
             logger.info("Extracting static team data")
             team_data = teams.get_teams()
@@ -83,83 +85,81 @@ class NBADataPipeline:
             raise
 
     def extract_game_logs(self):
-        try:
-            for season in range(self.start_season, self.end_season + 1):
-                try:
-                    full_season = self._season_formatter(season)
+        """Extract regular season game logs for each team by 
+           season and writes it locally to QC checks"""
 
-                    logger.info(f"Extracting game log data for {full_season} season")
-                    game_log = LeagueGameFinder(
-                        season_nullable=full_season,
-                        season_type_nullable="Regular Season",
-                    ).get_normalized_dict()["LeagueGameFinderResults"]
-                    logger.info(f"Extracted {len(game_log)} rows")
+        for season in range(self.start_season, self.end_season + 1):
+            try:
+                full_season = self._season_formatter(season)
 
-                    file_path = os.path.join(
-                        self.game_logs_path, f"{full_season}_game_logs.json"
-                    )
-                    logger.info(f"Writing data to JSON file at {file_path} ")
+                logger.info(f"Extracting game log data for {full_season} season")
+                game_log = LeagueGameFinder(
+                    season_nullable=full_season,
+                    season_type_nullable="Regular Season",
+                ).get_normalized_dict()["LeagueGameFinderResults"]
+                logger.info(f"Extracted {len(game_log)} rows")
 
-                    with open(file_path, "w") as f:
-                        json.dump(game_log, f, indent=4)
+                file_path = os.path.join(
+                    self.game_logs_path, f"{full_season}_game_logs.json"
+                )
+                logger.info(f"Writing data to JSON file at {file_path} ")
 
-                    logger.info(f"Successfully wrote data to JSON file at {file_path}")
+                with open(file_path, "w") as f:
+                    json.dump(game_log, f, indent=4)
 
-                    time.sleep(1)
+                logger.info(f"Successfully wrote data to JSON file at {file_path}")
 
-                except Exception as e:
-                    logger.error(f"Failed to extract game log data: {e}")
+                time.sleep(1)
 
-        except Exception as e:
-            logger.error(f"Failed to extract game log data: {e}")
-            raise
+            except Exception as e:
+                logger.error(f"Failed to extract game log data: {e}")
 
     def extract_team_season_stats(self, game_location, metrics_level):
-        try:
-            for season in range(self.start_season, self.end_season + 1):
-                try:
-                    full_season = self._season_formatter(season)
+        """Extract season-grained stats for each team by 
+           season and writes it locally to QC checks"""
+        
+        for season in range(self.start_season, self.end_season + 1):
+            try:
+                full_season = self._season_formatter(season)
 
-                    logger.info(
-                        f"Extracting team season stats for {full_season} season"
-                    )
+                logger.info(
+                    f"Extracting team season stats for {full_season} season"
+                )
 
-                    team_stats = LeagueDashTeamStats(
-                        season=full_season,
-                        location_nullable=game_location,
-                        measure_type_detailed_defense=metrics_level,
-                        timeout=100,
-                    ).get_normalized_dict()["LeagueDashTeamStats"]
-                    logger.info(f"Extracted {len(team_stats)} rows")
+                team_stats = LeagueDashTeamStats(
+                    season=full_season,
+                    location_nullable=game_location,
+                    measure_type_detailed_defense=metrics_level,
+                    timeout=100,
+                ).get_normalized_dict()["LeagueDashTeamStats"]
+                logger.info(f"Extracted {len(team_stats)} rows")
 
-                    file_path = os.path.join(
-                        self.team_stats_path,
-                        f"{full_season}_{game_location}_{metrics_level}_team_stats.json",
-                    )
-                    logger.info(f"Writing data to JSON file at {file_path} ")
+                file_path = os.path.join(
+                    self.team_stats_path,
+                    f"{full_season}_{game_location}_{metrics_level}_team_stats.json",
+                )
+                logger.info(f"Writing data to JSON file at {file_path} ")
 
-                    with open(file_path, "w") as f:
-                        json.dump(team_stats, f, indent=4)
+                with open(file_path, "w") as f:
+                    json.dump(team_stats, f, indent=4)
 
-                    logger.info(f"Successfully wrote data to JSON file at {file_path}")
+                logger.info(f"Successfully wrote data to JSON file at {file_path}")
 
-                    time.sleep(3)
+                time.sleep(3)
 
-                except Exception as e:
-                    logger.error(f"Failed to extract team season stats data: {e}")
-
-        except Exception as e:
-            logger.error(f"Failed to extract team season stats data: {e}")
-            raise
+            except Exception as e:
+                logger.error(f"Failed to extract team season stats data: {e}")
 
     def load_team_data(self):
+        "Load json files containing team data into staging table in DuckDB"
+
         try:
             team_data_path = f"{self.team_static_path}/*.json"
             logger.info(
                 f"Loading JSON files in duckdb staging table from {team_data_path}"
             )
             self.conn.execute(
-                f"CREATE TABLE staging_teams_data AS SELECT * FROM read_json_auto('{team_data_path}')"
+                f"CREATE TABLE IF NOT EXISTS staging_teams_data AS SELECT * FROM read_json_auto('{team_data_path}')"
             )
 
             rows_loaded = self.conn.execute(
@@ -174,13 +174,15 @@ class NBADataPipeline:
             raise
 
     def load_game_logs_data(self):
+        "Load json files containing game log data into staging table in DuckDB"
+
         try:
             game_data_path = f"{self.game_logs_path}/*.json"
             logger.info(
                 f"Loading JSON files in duckdb staging table from {game_data_path}"
             )
             self.conn.execute(
-                f"CREATE TABLE staging_game_log_data AS SELECT * FROM read_json_auto('{game_data_path}')"
+                f"CREATE TABLE IF NOT EXISTS staging_game_log_data AS SELECT * FROM read_json_auto('{game_data_path}')"
             )
 
             rows_loaded = self.conn.execute(
@@ -194,6 +196,14 @@ class NBADataPipeline:
             raise
 
     def load_team_season_data(self):
+        """Load json files containing season stats data into staging table in DuckDB.
+           Prior to loading the json files into the staging area, each file is loaded
+           into pandas where a season and location columns are added.
+
+           Given the base advanced season data have different columns and values, the two
+           groups are concatinated and loaded into separate staging tables.
+        """
+
         try:
             base_dfs = []
             advanced_dfs = []
@@ -218,7 +228,7 @@ class NBADataPipeline:
             combined_advanced = pd.concat(advanced_dfs)
 
             self.conn.execute(
-                "CREATE TABLE staging_team_stats_base AS SELECT * FROM combined_base"
+                "CREATE TABLE IF NOT EXISTS staging_team_stats_base AS SELECT * FROM combined_base"
             )
             base_rows_loaded = self.conn.execute(
                 "SELECT COUNT(*) FROM staging_team_stats_base"
@@ -228,7 +238,7 @@ class NBADataPipeline:
             )
 
             self.conn.execute(
-                "CREATE TABLE staging_team_stats_advanced AS SELECT * FROM combined_advanced"
+                "CREATE TABLE IF NOT EXISTS staging_team_stats_advanced AS SELECT * FROM combined_advanced"
             )
             adv_rows_loaded = self.conn.execute(
                 "SELECT COUNT(*) FROM staging_team_stats_advanced"
@@ -242,10 +252,12 @@ class NBADataPipeline:
             raise
 
     def transform_team_data(self):
+        "Builds the dim_team dimension table from staging_teams_data."
+
         try:
             logger.info("Creating dim_team table in db")
             self.conn.execute("""
-                            CREATE TABLE dim_team (
+                            CREATE TABLE IF NOT EXISTS dim_team (
                                 team_id INTEGER PRIMARY KEY, 
                                 full_name VARCHAR, 
                                 abbreviation VARCHAR, 
@@ -283,10 +295,12 @@ class NBADataPipeline:
             raise
 
     def transform_dim_season(self):
+        "Builds the dim_season dimension table from staging_game_log_data."
+
         try:
             logger.info("Creating dim_season table in db")
             self.conn.execute(
-                """CREATE TABLE dim_season (
+                """CREATE TABLE IF NOT EXISTS dim_season (
                 season_id VARCHAR PRIMARY KEY, 
                 season_start_year INTEGER NOT NULL,
                 era VARCHAR NOT NULL,
@@ -328,7 +342,7 @@ class NBADataPipeline:
                 "SELECT COUNT(*) FROM dim_season"
             ).fetchone()[0]
             logger.info(
-                f"Loaded {dim_season_row_count} rows of team data to dim_team table"
+                f"Loaded {dim_season_row_count} rows of team data to dim_season table"
             )
 
         except Exception as e:
@@ -336,10 +350,12 @@ class NBADataPipeline:
             raise
 
     def transform_dim_game(self):
+        "Builds the dim_game dimension table from staging_game_log_data."
+
         try:
             logger.info("Creating dim_game table in db")
             self.conn.execute(
-                """CREATE TABLE dim_game (
+                """CREATE TABLE IF NOT EXISTS dim_game (
                 game_id VARCHAR PRIMARY KEY,
                 game_date DATE NOT NULL,
                 month INTEGER, 
@@ -374,10 +390,12 @@ class NBADataPipeline:
             raise
 
     def transform_fact_team_game(self):
+        "Builds the fact_team_game fact table from staging_game_log_data."
+
         try:
             logger.info("Creating fact_team_game table in db")
             self.conn.execute(
-                """CREATE TABLE fact_team_game (
+                """CREATE TABLE IF NOT EXISTS fact_team_game (
                 game_id VARCHAR REFERENCES dim_game(game_id),
                 team_id INTEGER REFERENCES dim_team(team_id),
                 opponent_team_id INTEGER REFERENCES dim_team(team_id),
@@ -488,10 +506,13 @@ class NBADataPipeline:
             raise
 
     def transform_fact_team_season(self):
+        """Builds the fact_team_season fact table from the team season stats
+           staging tables."""
+
         try:
             logger.info("Creating fact_team_season table in db")
             self.conn.execute(
-                """CREATE TABLE fact_team_season (
+                """CREATE TABLE IF NOT EXISTS fact_team_season (
                 team_id INTEGER REFERENCES dim_team(team_id),
                 location VARCHAR,
                 season_id VARCHAR REFERENCES dim_season(season_id),  
