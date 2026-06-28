@@ -43,7 +43,6 @@ class NBADataPipeline:
         self.db_path = Path(self.data_dir + "/db")
         self.db_path.mkdir(parents=True, exist_ok=True)
         self.db_file = Path(self.db_path, "nba_analytics.duckdb")
-        self.conn = duckdb.connect(self.db_file)
 
         logger.info("NBADataPipeline initialized")
 
@@ -162,20 +161,21 @@ class NBADataPipeline:
         "Load json files containing team data into staging table in DuckDB"
 
         try:
-            team_data_path = f"{self.team_static_path}/*.json"
-            logger.info(
-                f"Loading JSON files in duckdb staging table from {team_data_path}"
-            )
-            self.conn.execute(
-                f"CREATE TABLE IF NOT EXISTS staging_teams_data AS SELECT * FROM read_json_auto('{team_data_path}')"
-            )
+            with duckdb.connect(self.db_file) as conn:
+                team_data_path = f"{self.team_static_path}/*.json"
+                logger.info(
+                    f"Loading JSON files in duckdb staging table from {team_data_path}"
+                )
+                conn.execute(
+                    f"CREATE TABLE IF NOT EXISTS staging_teams_data AS SELECT * FROM read_json_auto('{team_data_path}')"
+                )
 
-            rows_loaded = self.conn.execute(
-                "SELECT COUNT(*) FROM staging_teams_data"
-            ).fetchone()[0]
-            logger.info(
-                f"Successfully loaded {rows_loaded} into game log staging table from {team_data_path}"
-            )
+                rows_loaded = conn.execute(
+                    "SELECT COUNT(*) FROM staging_teams_data"
+                ).fetchone()[0]
+                logger.info(
+                    f"Successfully loaded {rows_loaded} into game log staging table from {team_data_path}"
+                )
 
         except Exception as e:
             logger.error(f"Failed to load team season stats data: {e}")
@@ -185,20 +185,21 @@ class NBADataPipeline:
         "Load json files containing game log data into staging table in DuckDB"
 
         try:
-            game_data_path = f"{self.game_logs_path}/*.json"
-            logger.info(
-                f"Loading JSON files in duckdb staging table from {game_data_path}"
-            )
-            self.conn.execute(
-                f"CREATE TABLE IF NOT EXISTS staging_game_log_data AS SELECT * FROM read_json_auto('{game_data_path}')"
-            )
+            with duckdb.connect(self.db_file) as conn:
+                game_data_path = f"{self.game_logs_path}/*.json"
+                logger.info(
+                    f"Loading JSON files in duckdb staging table from {game_data_path}"
+                )
+                conn.execute(
+                    f"CREATE TABLE IF NOT EXISTS staging_game_log_data AS SELECT * FROM read_json_auto('{game_data_path}')"
+                )
 
-            rows_loaded = self.conn.execute(
-                "SELECT COUNT(*) FROM staging_game_log_data"
-            ).fetchone()[0]
-            logger.info(
-                f"Successfully loaded {rows_loaded} into game log staging table from {game_data_path}"
-            )
+                rows_loaded = conn.execute(
+                    "SELECT COUNT(*) FROM staging_game_log_data"
+                ).fetchone()[0]
+                logger.info(
+                    f"Successfully loaded {rows_loaded} into game log staging table from {game_data_path}"
+                )
         except Exception as e:
             logger.error(f"Failed to load game logs data: {e}")
             raise
@@ -235,25 +236,26 @@ class NBADataPipeline:
             combined_base = pd.concat(base_dfs)
             combined_advanced = pd.concat(advanced_dfs)
 
-            self.conn.execute(
-                "CREATE TABLE IF NOT EXISTS staging_team_stats_base AS SELECT * FROM combined_base"
-            )
-            base_rows_loaded = self.conn.execute(
-                "SELECT COUNT(*) FROM staging_team_stats_base"
-            ).fetchone()[0]
-            logger.info(
-                f"Successfully loaded {base_rows_loaded} into team season staging table from {file_base_name}"
-            )
+            with duckdb.connect(self.db_file) as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS staging_team_stats_base AS SELECT * FROM combined_base"
+                )
+                base_rows_loaded = conn.execute(
+                    "SELECT COUNT(*) FROM staging_team_stats_base"
+                ).fetchone()[0]
+                logger.info(
+                    f"Successfully loaded {base_rows_loaded} into team season staging table from {file_base_name}"
+                )
 
-            self.conn.execute(
-                "CREATE TABLE IF NOT EXISTS staging_team_stats_advanced AS SELECT * FROM combined_advanced"
-            )
-            adv_rows_loaded = self.conn.execute(
-                "SELECT COUNT(*) FROM staging_team_stats_advanced"
-            ).fetchone()[0]
-            logger.info(
-                f"Successfully loaded {adv_rows_loaded} into team season staging table from {file_base_name}"
-            )
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS staging_team_stats_advanced AS SELECT * FROM combined_advanced"
+                )
+                adv_rows_loaded = conn.execute(
+                    "SELECT COUNT(*) FROM staging_team_stats_advanced"
+                ).fetchone()[0]
+                logger.info(
+                    f"Successfully loaded {adv_rows_loaded} into team season staging table from {file_base_name}"
+                )
 
         except Exception as e:
             logger.error(f"Failed to load team season data: {e}")
@@ -263,41 +265,42 @@ class NBADataPipeline:
         "Builds the dim_team dimension table from staging_teams_data."
 
         try:
-            logger.info("Creating dim_team table in db")
-            self.conn.execute("""
-                            CREATE TABLE IF NOT EXISTS dim_team (
-                                team_id INTEGER PRIMARY KEY, 
-                                full_name VARCHAR, 
-                                abbreviation VARCHAR, 
-                                nickname VARCHAR, 
-                                city VARCHAR, 
-                                state VARCHAR, 
-                                year_founded INTEGER,
-                                conference VARCHAR
-                              )
-                            """)
-            logger.info("Inserting data into dim_team table in db")
-            self.conn.execute(""" INSERT INTO dim_team 
-                            SELECT 
-                                id as team_id, 
-                                full_name, 
-                                abbreviation, 
-                                nickname, 
-                                city, 
-                                state, 
-                                year_founded,
-                                CASE
-                                    WHEN abbreviation in ('BOS','BKN','NYK','PHI','TOR','CHI','CLE','DET','IND',
-                                    'MIL','ATL','CHA','MIA','ORL','WAS') THEN 'East' ELSE 'West' END AS conference
-                               
-                            FROM staging_teams_data
-                            """)
-            dim_team_row_count = self.conn.execute(
-                "SELECT COUNT(*) FROM dim_team"
-            ).fetchone()[0]
-            logger.info(
-                f"Loaded {dim_team_row_count} rows of team data to dim_team table"
-            )
+            with duckdb.connect(self.db_file) as conn:
+                logger.info("Creating dim_team table in db")
+                conn.execute("""
+                                CREATE TABLE IF NOT EXISTS dim_team (
+                                    team_id INTEGER PRIMARY KEY, 
+                                    full_name VARCHAR, 
+                                    abbreviation VARCHAR, 
+                                    nickname VARCHAR, 
+                                    city VARCHAR, 
+                                    state VARCHAR, 
+                                    year_founded INTEGER,
+                                    conference VARCHAR
+                                )
+                                """)
+                logger.info("Inserting data into dim_team table in db")
+                conn.execute(""" INSERT INTO dim_team 
+                                SELECT 
+                                    id as team_id, 
+                                    full_name, 
+                                    abbreviation, 
+                                    nickname, 
+                                    city, 
+                                    state, 
+                                    year_founded,
+                                    CASE
+                                        WHEN abbreviation in ('BOS','BKN','NYK','PHI','TOR','CHI','CLE','DET','IND',
+                                        'MIL','ATL','CHA','MIA','ORL','WAS') THEN 'East' ELSE 'West' END AS conference
+                                
+                                FROM staging_teams_data
+                                """)
+                dim_team_row_count = conn.execute(
+                    "SELECT COUNT(*) FROM dim_team"
+                ).fetchone()[0]
+                logger.info(
+                    f"Loaded {dim_team_row_count} rows of team data to dim_team table"
+                )
         except Exception as e:
             logger.error(f"Failed to load dim_team data: {e}")
             raise
@@ -306,52 +309,53 @@ class NBADataPipeline:
         "Builds the dim_season dimension table from staging_game_log_data."
 
         try:
-            logger.info("Creating dim_season table in db")
-            self.conn.execute(
-                """CREATE TABLE IF NOT EXISTS dim_season (
-                season_id VARCHAR PRIMARY KEY, 
-                season_start_year INTEGER NOT NULL,
-                era VARCHAR NOT NULL,
-                games_in_season INTEGER NOT NULL,
-                is_lockout BOOLEAN NOT NULL,
-                is_COVID BOOLEAN NOT NULL
+            with duckdb.connect(self.db_file) as conn:
+                logger.info("Creating dim_season table in db")
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS dim_season (
+                    season_id VARCHAR PRIMARY KEY, 
+                    season_start_year INTEGER NOT NULL,
+                    era VARCHAR NOT NULL,
+                    games_in_season INTEGER NOT NULL,
+                    is_lockout BOOLEAN NOT NULL,
+                    is_COVID BOOLEAN NOT NULL
+                    )
+                """
                 )
-            """
-            )
-            logger.info("Inserting data into dim_season table in db")
-            self.conn.execute(""" INSERT INTO dim_season
-                            SELECT 
-                                DISTINCT CONCAT(SEASON_ID[2:], '-', LPAD(CAST((CAST(SEASON_ID[2:] AS INTEGER) + 1) % 100 AS VARCHAR), 2, '0')) as season_id,
-                                CAST(SEASON_ID[2:] AS INTEGER) as season_start_year,
-                                CASE
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) BETWEEN 1996 and 2016 THEN 'Pre-Back-to-Back Reform'
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) BETWEEN 2017 and 2018 THEN 'Schedule Reform'
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) = 2019 THEN 'COVID Bubble'
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) = 2020 THEN 'COVID Compressed'
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) BETWEEN 2021 and 2024 THEN 'Post-COVID'
-                                    ELSE Null END AS era,
-                                CASE
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) = 1998 THEN 50
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) = 2011 THEN 66
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) = 2019 THEN 75
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) = 2020 THEN 72
-                                    ELSE 82 END AS games_in_season,
-                                CASE
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) in (1998, 2011) THEN TRUE
-                                    ELSE FALSE END AS is_lockout,
-                                CASE
-                                    WHEN CAST(SEASON_ID[2:] AS INTEGER) in (2019,2020) THEN TRUE
-                                    ELSE FALSE END AS is_covid
-                            
-                                FROM staging_game_log_data
-                            """)
+                logger.info("Inserting data into dim_season table in db")
+                conn.execute(""" INSERT INTO dim_season
+                                SELECT 
+                                    DISTINCT CONCAT(SEASON_ID[2:], '-', LPAD(CAST((CAST(SEASON_ID[2:] AS INTEGER) + 1) % 100 AS VARCHAR), 2, '0')) as season_id,
+                                    CAST(SEASON_ID[2:] AS INTEGER) as season_start_year,
+                                    CASE
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) BETWEEN 1996 and 2016 THEN 'Pre-Back-to-Back Reform'
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) BETWEEN 2017 and 2018 THEN 'Schedule Reform'
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) = 2019 THEN 'COVID Bubble'
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) = 2020 THEN 'COVID Compressed'
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) BETWEEN 2021 and 2024 THEN 'Post-COVID'
+                                        ELSE Null END AS era,
+                                    CASE
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) = 1998 THEN 50
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) = 2011 THEN 66
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) = 2019 THEN 75
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) = 2020 THEN 72
+                                        ELSE 82 END AS games_in_season,
+                                    CASE
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) in (1998, 2011) THEN TRUE
+                                        ELSE FALSE END AS is_lockout,
+                                    CASE
+                                        WHEN CAST(SEASON_ID[2:] AS INTEGER) in (2019,2020) THEN TRUE
+                                        ELSE FALSE END AS is_covid
+                                
+                                    FROM staging_game_log_data
+                                """)
 
-            dim_season_row_count = self.conn.execute(
-                "SELECT COUNT(*) FROM dim_season"
-            ).fetchone()[0]
-            logger.info(
-                f"Loaded {dim_season_row_count} rows of team data to dim_season table"
-            )
+                dim_season_row_count = conn.execute(
+                    "SELECT COUNT(*) FROM dim_season"
+                ).fetchone()[0]
+                logger.info(
+                    f"Loaded {dim_season_row_count} rows of team data to dim_season table"
+                )
 
         except Exception as e:
             logger.error(f"Failed to transform dim_season data: {e}")
@@ -361,37 +365,38 @@ class NBADataPipeline:
         "Builds the dim_game dimension table from staging_game_log_data."
 
         try:
-            logger.info("Creating dim_game table in db")
-            self.conn.execute(
-                """CREATE TABLE IF NOT EXISTS dim_game (
-                game_id VARCHAR PRIMARY KEY,
-                game_date DATE NOT NULL,
-                month INTEGER, 
-                day_of_week VARCHAR, 
-                season_id VARCHAR NOT NULL,
-                is_bubble BOOLEAN
+            with duckdb.connect(self.db_file) as conn:
+                logger.info("Creating dim_game table in db")
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS dim_game (
+                    game_id VARCHAR PRIMARY KEY,
+                    game_date DATE NOT NULL,
+                    month INTEGER, 
+                    day_of_week VARCHAR, 
+                    season_id VARCHAR NOT NULL,
+                    is_bubble BOOLEAN
+                    )
+                """
                 )
-            """
-            )
-            logger.info("Inserting data into dim_game table in db")
-            self.conn.execute(""" INSERT INTO dim_game
-                            SELECT 
-                                DISTINCT game_id,
-                                CAST(game_date AS DATE) as game_date,
-                                EXTRACT(MONTH from game_date) as month,
-                                DAYNAME(game_date) as day_of_week,
-                                CONCAT(SEASON_ID[2:], '-', LPAD(CAST((CAST(SEASON_ID[2:] AS INTEGER) + 1) % 100 AS VARCHAR), 2, '0')) as season_id,
-                                CASE 
-                                    WHEN game_date BETWEEN '2020-07-30' AND '2020-10-11' THEN TRUE ELSE FALSE END AS is_bubble
-                            FROM staging_game_log_data 
-                            """)
+                logger.info("Inserting data into dim_game table in db")
+                conn.execute(""" INSERT INTO dim_game
+                                SELECT 
+                                    DISTINCT game_id,
+                                    CAST(game_date AS DATE) as game_date,
+                                    EXTRACT(MONTH from game_date) as month,
+                                    DAYNAME(game_date) as day_of_week,
+                                    CONCAT(SEASON_ID[2:], '-', LPAD(CAST((CAST(SEASON_ID[2:] AS INTEGER) + 1) % 100 AS VARCHAR), 2, '0')) as season_id,
+                                    CASE 
+                                        WHEN game_date BETWEEN '2020-07-30' AND '2020-10-11' THEN TRUE ELSE FALSE END AS is_bubble
+                                FROM staging_game_log_data 
+                                """)
 
-            dim_game_row_count = self.conn.execute(
-                "SELECT COUNT(*) FROM dim_game"
-            ).fetchone()[0]
-            logger.info(
-                f"Loaded {dim_game_row_count} rows of team data to dim_game table"
-            )
+                dim_game_row_count = conn.execute(
+                    "SELECT COUNT(*) FROM dim_game"
+                ).fetchone()[0]
+                logger.info(
+                    f"Loaded {dim_game_row_count} rows of team data to dim_game table"
+                )
 
         except Exception as e:
             logger.error(f"Failed to transform dim_game data: {e}")
@@ -401,113 +406,114 @@ class NBADataPipeline:
         "Builds the fact_team_game fact table from staging_game_log_data."
 
         try:
-            logger.info("Creating fact_team_game table in db")
-            self.conn.execute(
-                """CREATE TABLE IF NOT EXISTS fact_team_game (
-                game_id VARCHAR REFERENCES dim_game(game_id),
-                team_id INTEGER REFERENCES dim_team(team_id),
-                opponent_team_id INTEGER REFERENCES dim_team(team_id),
-                season_id VARCHAR REFERENCES dim_season(season_id),
-                is_home BOOLEAN,
-                wl VARCHAR,
-                pts INTEGER,
-                opp_pts INTEGER,
-                fgm INTEGER,
-                fga INTEGER,
-                fg_pct FLOAT,
-                fg3m INTEGER,
-                fg3a INTEGER,
-                fg3_pct FLOAT,
-                ftm INTEGER,
-                fta INTEGER,
-                ft_pct FLOAT,
-                oreb INTEGER,
-                dreb INTEGER,
-                reb INTEGER,
-                ast INTEGER,
-                stl INTEGER,
-                blk INTEGER,
-                tov INTEGER,
-                pf INTEGER,
-                plus_minus INTEGER,
-                rest_days INTEGER,
-                is_back_to_back BOOLEAN,
-                PRIMARY KEY (game_id, team_id)
+            with duckdb.connect(self.db_file) as conn:
+                logger.info("Creating fact_team_game table in db")
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS fact_team_game (
+                    game_id VARCHAR REFERENCES dim_game(game_id),
+                    team_id INTEGER REFERENCES dim_team(team_id),
+                    opponent_team_id INTEGER REFERENCES dim_team(team_id),
+                    season_id VARCHAR REFERENCES dim_season(season_id),
+                    is_home BOOLEAN,
+                    wl VARCHAR,
+                    pts INTEGER,
+                    opp_pts INTEGER,
+                    fgm INTEGER,
+                    fga INTEGER,
+                    fg_pct FLOAT,
+                    fg3m INTEGER,
+                    fg3a INTEGER,
+                    fg3_pct FLOAT,
+                    ftm INTEGER,
+                    fta INTEGER,
+                    ft_pct FLOAT,
+                    oreb INTEGER,
+                    dreb INTEGER,
+                    reb INTEGER,
+                    ast INTEGER,
+                    stl INTEGER,
+                    blk INTEGER,
+                    tov INTEGER,
+                    pf INTEGER,
+                    plus_minus INTEGER,
+                    rest_days INTEGER,
+                    is_back_to_back BOOLEAN,
+                    PRIMARY KEY (game_id, team_id)
+                    )
+                """
                 )
-            """
-            )
-            logger.info("Inserting data into fact_team_game table in db")
-            self.conn.execute(""" INSERT INTO fact_team_game
-                              WITH CTE AS (
-                                SELECT 
-                                    t.game_id,
-                                    t.team_id,
-                                    opp.team_id AS opponent_team_id,
-                                    CONCAT(t.SEASON_ID[2:], '-', LPAD(CAST((CAST(t.SEASON_ID[2:] AS INTEGER) + 1) % 100 AS VARCHAR), 2, '0')) as season_id,
-                                    CASE WHEN t.matchup LIKE '%vs.%' THEN TRUE ELSE FALSE END AS is_home,
-                                    t.wl,
-                                    t.pts,
-                                    opp.pts AS opp_pts,
-                                    t.fgm,
-                                    t.fga,
-                                    t.fg_pct,
-                                    t.fg3m,
-                                    t.fg3a,
-                                    t.fg3_pct,
-                                    t.ftm,
-                                    t.fta,
-                                    t.ft_pct,
-                                    t.oreb,
-                                    t.dreb,
-                                    t.reb,
-                                    t.ast,
-                                    t.stl,
-                                    t.blk,
-                                    t.tov,
-                                    t.pf,
-                                    t.plus_minus,       
-                                    CAST(t.game_date AS DATE) AS game_date,
-                                    LAG(CAST(t.game_date AS DATE), 1) OVER (PARTITION BY t.team_id, t.season_id ORDER BY t.game_date) as prev_game_date
-                                FROM staging_game_log_data t
-                                LEFT JOIN staging_game_log_data opp on t.game_id=opp.game_id AND t.team_id != opp.team_id)
-                            SELECT
-                              game_id,
-                              team_id,
-                              opponent_team_id,
-                              season_id,
-                              is_home,
-                              wl,
-                              pts,
-                              opp_pts,
-                              fgm,
-                              fga,
-                              fg_pct,
-                              fg3m,
-                              fg3a,
-                              fg3_pct,
-                              ftm,
-                              fta,
-                              ft_pct,
-                              oreb,
-                              dreb,
-                              reb,
-                              ast,
-                              stl,
-                              blk,
-                              tov,
-                              pf,
-                              plus_minus,
-                              game_date - prev_game_date AS rest_days,
-                              CASE WHEN (game_date - prev_game_date) = 1 THEN TRUE ELSE FALSE END AS is_back_to_back
-                            FROM CTE
-                            """)
+                logger.info("Inserting data into fact_team_game table in db")
+                conn.execute(""" INSERT INTO fact_team_game
+                                WITH CTE AS (
+                                    SELECT 
+                                        t.game_id,
+                                        t.team_id,
+                                        opp.team_id AS opponent_team_id,
+                                        CONCAT(t.SEASON_ID[2:], '-', LPAD(CAST((CAST(t.SEASON_ID[2:] AS INTEGER) + 1) % 100 AS VARCHAR), 2, '0')) as season_id,
+                                        CASE WHEN t.matchup LIKE '%vs.%' THEN TRUE ELSE FALSE END AS is_home,
+                                        t.wl,
+                                        t.pts,
+                                        opp.pts AS opp_pts,
+                                        t.fgm,
+                                        t.fga,
+                                        t.fg_pct,
+                                        t.fg3m,
+                                        t.fg3a,
+                                        t.fg3_pct,
+                                        t.ftm,
+                                        t.fta,
+                                        t.ft_pct,
+                                        t.oreb,
+                                        t.dreb,
+                                        t.reb,
+                                        t.ast,
+                                        t.stl,
+                                        t.blk,
+                                        t.tov,
+                                        t.pf,
+                                        t.plus_minus,       
+                                        CAST(t.game_date AS DATE) AS game_date,
+                                        LAG(CAST(t.game_date AS DATE), 1) OVER (PARTITION BY t.team_id, t.season_id ORDER BY t.game_date) as prev_game_date
+                                    FROM staging_game_log_data t
+                                    LEFT JOIN staging_game_log_data opp on t.game_id=opp.game_id AND t.team_id != opp.team_id)
+                                SELECT
+                                game_id,
+                                team_id,
+                                opponent_team_id,
+                                season_id,
+                                is_home,
+                                wl,
+                                pts,
+                                opp_pts,
+                                fgm,
+                                fga,
+                                fg_pct,
+                                fg3m,
+                                fg3a,
+                                fg3_pct,
+                                ftm,
+                                fta,
+                                ft_pct,
+                                oreb,
+                                dreb,
+                                reb,
+                                ast,
+                                stl,
+                                blk,
+                                tov,
+                                pf,
+                                plus_minus,
+                                game_date - prev_game_date AS rest_days,
+                                CASE WHEN (game_date - prev_game_date) = 1 THEN TRUE ELSE FALSE END AS is_back_to_back
+                                FROM CTE
+                                """)
 
-            fact_team_game_row_count = self.conn.execute(
-                "SELECT COUNT(*) FROM fact_team_game"
-            ).fetchone()[0]
-            logger.info(
-                f"Loaded {fact_team_game_row_count} rows of team data to fact_team_game"
-            )
+                fact_team_game_row_count = conn.execute(
+                    "SELECT COUNT(*) FROM fact_team_game"
+                ).fetchone()[0]
+                logger.info(
+                    f"Loaded {fact_team_game_row_count} rows of team data to fact_team_game"
+                )
 
         except Exception as e:
             logger.error(f"Failed to transform fact_team_game: {e}")
@@ -518,51 +524,52 @@ class NBADataPipeline:
            staging tables."""
 
         try:
-            logger.info("Creating fact_team_season table in db")
-            self.conn.execute(
-                """CREATE TABLE IF NOT EXISTS fact_team_season (
-                team_id INTEGER REFERENCES dim_team(team_id),
-                location VARCHAR,
-                season_id VARCHAR REFERENCES dim_season(season_id),  
-                gp INTEGER, 
-                w INTEGER,  
-                l INTEGER, 
-                w_pct FLOAT,
-                off_rating FLOAT, 
-                def_rating FLOAT, 
-                net_rating FLOAT, 
-                pace FLOAT, 
-                pie FLOAT,
-                PRIMARY KEY (team_id, season_id, location)
+            with duckdb.connect(self.db_file) as conn:
+                logger.info("Creating fact_team_season table in db")
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS fact_team_season (
+                    team_id INTEGER REFERENCES dim_team(team_id),
+                    location VARCHAR,
+                    season_id VARCHAR REFERENCES dim_season(season_id),  
+                    gp INTEGER, 
+                    w INTEGER,  
+                    l INTEGER, 
+                    w_pct FLOAT,
+                    off_rating FLOAT, 
+                    def_rating FLOAT, 
+                    net_rating FLOAT, 
+                    pace FLOAT, 
+                    pie FLOAT,
+                    PRIMARY KEY (team_id, season_id, location)
+                    )
+                """
                 )
-            """
-            )
-            logger.info("Inserting data into fact_team_season table in db")
-            self.conn.execute(""" INSERT INTO fact_team_season
-                            SELECT
-                              b.team_id,
-                              b.location,
-                              b.season AS season_id,
-                              b.gp, 
-                              b.w, 
-                              b.l, 
-                              b.w_pct,
-                              a.off_rating, 
-                              a.def_rating, 
-                              a.net_rating, 
-                              a.pace, 
-                              a.pie 
-                            FROM staging_team_stats_base b
-                            INNER JOIN staging_team_stats_advanced a
-                            on a.team_id=b.team_id AND a.location=b.location AND a.season=b.season
-                            """)
+                logger.info("Inserting data into fact_team_season table in db")
+                conn.execute(""" INSERT INTO fact_team_season
+                                SELECT
+                                b.team_id,
+                                b.location,
+                                b.season AS season_id,
+                                b.gp, 
+                                b.w, 
+                                b.l, 
+                                b.w_pct,
+                                a.off_rating, 
+                                a.def_rating, 
+                                a.net_rating, 
+                                a.pace, 
+                                a.pie 
+                                FROM staging_team_stats_base b
+                                INNER JOIN staging_team_stats_advanced a
+                                on a.team_id=b.team_id AND a.location=b.location AND a.season=b.season
+                                """)
 
-            fact_team_season_row_count = self.conn.execute(
-                "SELECT COUNT(*) FROM fact_team_season"
-            ).fetchone()[0]
-            logger.info(
-                f"Loaded {fact_team_season_row_count} rows of team data to fact_team_season"
-            )
+                fact_team_season_row_count = conn.execute(
+                    "SELECT COUNT(*) FROM fact_team_season"
+                ).fetchone()[0]
+                logger.info(
+                    f"Loaded {fact_team_season_row_count} rows of team data to fact_team_season"
+                )
 
         except Exception as e:
             logger.error(f"Failed to transform fact_team_season: {e}")
