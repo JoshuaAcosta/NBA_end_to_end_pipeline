@@ -73,6 +73,8 @@ class NBADataPipeline:
             logger.info("Extracting static team data")
             team_data = teams.get_teams()
             logger.info(f"Extracted {len(team_data)} rows")
+            if not team_data:
+                logger.warning("Empty response for static team data")
 
             file_path = os.path.join(self.team_static_path, "teams_static.json")
             logger.info(f"Writing data to JSON file at {file_path} ")
@@ -98,6 +100,9 @@ class NBADataPipeline:
                     season_type_nullable="Regular Season",
                 ).get_normalized_dict()["LeagueGameFinderResults"]
                 logger.info(f"Extracted {len(game_log)} rows")
+
+                if not game_log:
+                    logger.warning("Empty response for game log API call")
 
                 file_path = os.path.join(
                     self.game_logs_path, f"{full_season}_game_logs.json"
@@ -133,6 +138,9 @@ class NBADataPipeline:
                     timeout=100,
                 ).get_normalized_dict()["LeagueDashTeamStats"]
                 logger.info(f"Extracted {len(team_stats)} rows")
+
+                if not team_stats:
+                    logger.warning("Empty response for team stats API call")
 
                 file_path = os.path.join(
                     self.team_stats_path,
