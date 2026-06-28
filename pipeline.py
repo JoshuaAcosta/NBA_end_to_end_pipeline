@@ -583,8 +583,8 @@ def main():
     pl.extract_team_season_stats("Road", "Base")
     pl.extract_team_season_stats("Road", "Advanced")
     extract_end_time = time.time()
-    extract_lapse_time = extract_end_time - extract_start_time
-    logger.info(f"Extraction lapse time: {extract_lapse_time}")
+    extract_time_lapsed = extract_end_time - extract_start_time
+    logger.info(f"Extraction time lapsed: {extract_time_lapsed:.1f}s")
 
     # Load
     load_start_time = time.time()
@@ -592,8 +592,8 @@ def main():
     pl.load_game_logs_data()
     pl.load_team_season_data()
     load_end_time = time.time()
-    load_lapse_time = load_end_time - load_start_time
-    logger.info(f"Load lapse time: {load_lapse_time}")
+    load__time_lasped = load_end_time - load_start_time
+    logger.info(f"Load time lapsed: {load__time_lasped:.1f}s")
 
     # Transform
     transform_start_time = time.time()
@@ -603,8 +603,8 @@ def main():
     pl.transform_fact_team_game()
     pl.transform_fact_team_season()
     transform_end_time = time.time()
-    transform_lapse_time = transform_end_time - transform_start_time
-    logger.info(f"transform lapse time: {transform_lapse_time}")
+    transform_time_lapsed = transform_end_time - transform_start_time
+    logger.info(f"transform time lapsed: {transform_time_lapsed:.1f}s")
 
 if __name__ == "__main__":
     main()
