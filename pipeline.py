@@ -8,10 +8,11 @@ from pathlib import Path
 import time
 from dotenv import load_dotenv
 
-load_dotenv()
 from nba_api.stats.endpoints import LeagueDashTeamStats
 from nba_api.stats.endpoints import LeagueGameFinder
 from nba_api.stats.static import teams
+
+load_dotenv()
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -435,9 +436,9 @@ class NBADataPipeline:
                                     t.pf,
                                     t.plus_minus,       
                                     CAST(t.game_date AS DATE) AS game_date,
-                                    LAG(CAST(t.game_date AS DATE), 1) OVER (PARTITION BY t.team_id ORDER BY t.game_date) as prev_game_date
+                                    LAG(CAST(t.game_date AS DATE), 1) OVER (PARTITION BY t.team_id, t.season_id ORDER BY t.game_date) as prev_game_date
                                 FROM staging_game_log_data t
-                                LEFT JOIN staging_game_log_data opp on t.game_id=opp.game_id AND t.team_id != opp.team_id  )
+                                LEFT JOIN staging_game_log_data opp on t.game_id=opp.game_id AND t.team_id != opp.team_id)
                             SELECT
                               game_id,
                               team_id,
