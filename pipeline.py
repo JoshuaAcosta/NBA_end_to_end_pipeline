@@ -39,7 +39,14 @@ class NBADataPipeline:
         self.data_dir = data_dir
         self.start_season = start_season
         self.end_season = end_season
+        self._set_paths()
 
+        self.conn = duckdb.connect(self.db_file)
+
+        logger.info("NBADataPipeline initialized")
+
+    def _set_paths(self):
+        "Sets path to landing zones for extracted data"
         self.raw_dir = Path(self.data_dir)
         self.team_static_path = Path(self.data_dir + "/team_static")
         self.game_logs_path = Path(self.data_dir + "/game_logs")
@@ -47,15 +54,13 @@ class NBADataPipeline:
         self.db_path = Path(self.data_dir + "/db")
         self.db_file = Path(self.db_path, "nba_analytics.duckdb")
 
+    def _create_directories(self):
+        "Creates directories as landing zone for extracted data"
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.team_static_path.mkdir(parents=True, exist_ok=True)
         self.game_logs_path.mkdir(parents=True, exist_ok=True)
         self.team_stats_path.mkdir(parents=True, exist_ok=True)
         self.db_path.mkdir(parents=True, exist_ok=True)
-
-        self.conn = duckdb.connect(self.db_file)
-
-        logger.info("NBADataPipeline initialized")
 
     def _season_formatter(self, year):
         return f"{year}-{str(year + 1)[2:]}"
@@ -508,7 +513,7 @@ class NBADataPipeline:
                             SELECT
                               b.team_id,
                               b.location,
-                              b.season,
+                              b.season AS season_id,
                               b.gp, 
                               b.w, 
                               b.l, 
@@ -536,9 +541,17 @@ class NBADataPipeline:
 
 
 def main():
+    
     logger.info("Starting data pipeline script")
+
     DATA_DIR = os.getenv("DATA_DIR")
+
+    if not DATA_DIR:
+        logger.error("DATA_DIR environment variable is not set. Check your .env file.")
+        raise EnvironmentError("DATA_DIR environment variable is not set. Check your .env file.")
+
     pl = NBADataPipeline(DATA_DIR, 1996, 2024)
+    pl._create_directories()
 
     # Extract
     extract_start_time = time.time()
